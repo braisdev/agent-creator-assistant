@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, field
 from typing import Optional
 
 from langchain_core.runnables import RunnableConfig
@@ -12,11 +12,14 @@ from langchain_core.runnables import RunnableConfig
 class Configuration:
     """The configuration for the agent."""
 
-    # Changeme: Add configurable values here!
-    # these values can be pre-set when you
-    # create assistants (https://langchain-ai.github.io/langgraph/cloud/how-tos/configuration_cloud/)
-    # and when you invoke the graph
-    my_configurable_param: str = "changeme"
+    # by default, we set the language as the language platform
+    tenant_id: str = "brais"
+    expert_id: str = "experto_de_brais"
+    expert_profile: dict = field(default_factory=lambda: {
+        "name": None,
+        "description": None,
+        "instructions": None,
+    })
 
     @classmethod
     def from_runnable_config(

@@ -1,38 +1,49 @@
-"""Define a simple chatbot agent.
+from typing import Literal
 
-This agent returns a predefined response without using an actual LLM.
-"""
-
-from typing import Any, Dict
-
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import StateGraph
+from dotenv import load_dotenv
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.constants import END, START
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.memory import InMemoryStore
+from langgraph.graph import StateGraph, MessagesState
 
 from agent.configuration import Configuration
-from agent.state import State
+
+from agent.nodes.message_manager import message_manager
+from agent.nodes.update_expert import update_expert
 
 
-async def my_node(state: State, config: RunnableConfig) -> Dict[str, Any]:
-    """Each node does work."""
-    configuration = Configuration.from_runnable_config(config)
-    # configuration = Configuration.from_runnable_config(config)
-    # You can use runtime configuration to alter the behavior of your
-    # graph.
-    return {
-        "changeme": "output from my_node. "
-        f"Configured with {configuration.my_configurable_param}"
-    }
+# Load environment variables
+load_dotenv()
 
 
-# Define a new graph
-workflow = StateGraph(State, config_schema=Configuration)
+def route_message(state: MessagesState) -> Literal[END, "update_expert"]:
+    """Reflect on the memories and chat history to decide whether to update the memory collection."""
+    message = state['messages'][-1]
+    if len(message.tool_calls) == 0:
+        return END
+    else:
+        tool_call = message.tool_calls[0]
+        if tool_call['args']['update_type'] == "expert":
+            return "update_expert"
+        else:
+            raise ValueError
 
-# Add the node to the graph
-workflow.add_node("my_node", my_node)
 
-# Set the entrypoint as `call_model`
-workflow.add_edge("__start__", "my_node")
+# Define the StateGraph
+workflow = StateGraph(MessagesState, config_schema=Configuration)
 
-# Compile the workflow into an executable graph
-graph = workflow.compile()
-graph.name = "New Graph"  # This defines the custom name in LangSmith
+workflow.add_node("message_manager", message_manager)
+workflow.add_node("update_expert", update_expert)
+workflow.add_edge(START, "message_manager")
+workflow.add_conditional_edges("message_manager", route_message)
+workflow.add_edge("update_expert", "message_manager")
+
+# Store for long-term (across-thread) memory
+across_thread_memory = InMemoryStore()
+
+# Checkpointer for short-term (within-thread) memory
+within_thread_memory = MemorySaver()
+
+# Compile the workflow with the checkpointer
+graph = workflow.compile(checkpointer=within_thread_memory, store=across_thread_memory)

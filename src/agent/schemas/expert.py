@@ -1,14 +1,9 @@
-"""Define the state structures for the agent."""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Optional
-
-from langgraph.graph import MessagesState
 from pydantic import BaseModel, Field
 
 
+@dataclass
 class Expert(BaseModel):
     """
     Represents a custom Agent that we're calling 'Expert' various attributes.
@@ -20,8 +15,3 @@ class Expert(BaseModel):
     name: Optional[str] = Field(None, description="Name of Expert")
     description: Optional[int] = Field(None, description="Description of the Expert")
     instructions: Optional[str] = Field(None, description="Instructions for the System prompt of the Expert")
-
-
-class ExpertCreatorAssistant(MessagesState):
-
-    Expert: Optional[Expert]
