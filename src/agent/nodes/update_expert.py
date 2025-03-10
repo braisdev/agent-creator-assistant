@@ -1,85 +1,131 @@
-import uuid
+import logging
 
-from langchain_core.runnables import RunnableConfig
-from langgraph.store.base import BaseStore
-from langgraph.graph import MessagesState
-from langmem import create_memory_store_manager, create_memory_manager
+from langmem import create_memory_manager
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from agent.configuration import Configuration
+from langgraph.types import Command
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
+
+from agent.state import ExpertCreatorAssistant
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class Expert(BaseModel):
     """
-    Represents a custom Agent that we're calling 'Expert' with various attributes.
+    Represents a custom Agent called 'Expert' with various attributes.
     Attributes:
-        name: Contains the Expert's name.
-        description: Contains the description of the Expert.
-        instructions: Contains the instructions for the System prompt of the Expert.
+        name: The Expert's name.
+        description: A brief description of the Expert.
+        instructions: Detailed instructions for the Expert.
     """
     name: Optional[str] = Field(None, description="Name of Expert")
     description: Optional[str] = Field(None, description="Description of the Expert")
-    instructions: Optional[str] = Field(None, description="Instructions for the System prompt of the Expert")
+    instructions: Optional[str] = Field(None, description="Instructions for the Expert")
 
 
-_CUSTOM_EXPERT_INSTRUCTIONS = """You are a memory manager that focuses on capturing details about a custom 
-    “Expert” the user is defining. The user may provide or modify the Expert’s name, description, and instructions (
-    prompt). Your job is to store or update these details so that future interactions have an accurate, consistent 
-    record of the Expert’s configuration.
+# Updated instructions with placeholders for recent messages and the current expert profile from state.
+_CUSTOM_EXPERT_INSTRUCTIONS = """You are a memory manager that focuses on capturing details about a custom "Expert" the user is defining.
 
-    1. **Extract & Contextualize**  
-       - Identify any references to the Expert’s name, description, and instructions within the conversation.
-       - Note if the user is revising previous details or providing entirely new information.
-       - Caveat uncertain or partial information with reasoning or confidence levels when needed.
+Recent Messages:
+{recent_messages}
 
-    2. **Compare & Update**  
-       - Check for changes or conflicts between the new details and any existing memory entries for this Expert.
-       - Update or remove outdated information, ensuring that the final record remains consistent and correct.
-       - Avoid storing redundant or contradictory statements—maintain a single, up-to-date source of truth for the Expert’s data.
+Current Expert Profile:
+{current_expert_profile}
 
-    3. **Synthesize & Reason**  
-       - Conclude what the final Expert name, description, and instructions should be based on the user’s latest inputs.
-       - Combine or refine partial information if it clarifies the Expert’s role or capabilities.
-       - Qualify conclusions if there is conflicting or incomplete data about the Expert.
+Your task is to update the Expert profile based solely on these inputs. Do not consider any older conversation context.
 
-    As the memory manager, record the Expert’s name, description, and instructions exactly as you want to recall them 
-    in future conversations. Keep it concise, consistent, and free of contradictions, while retaining all important 
-    details the user has provided."""
+Steps:
+1. Review the Recent Messages to identify any changes or updates to the Expert’s name, description, or instructions.
+2. Merge these changes with the Current Expert Profile.
+3. Output a single, updated Expert profile record that is concise, consistent, and free of contradictions.
+"""
 
 
-async def update_expert(state: MessagesState, config: RunnableConfig, store: BaseStore):
-    # Use the Configuration class to extract tenant_id and expert_id
-    configuration = Configuration.from_runnable_config(config)
-    tenant_id = configuration.tenant_id
-    expert_id = configuration.expert_id
+async def update_expert(state: ExpertCreatorAssistant):
 
-    # Retrieve the current Expert profile from the store asynchronously
-    namespace = (tenant_id, "experts", expert_id)
-    memories = await store.asearch(namespace)
+    # Get the current expert profile from state (synchronized earlier via sync_profile).
+    current_expert_profile = state.get("expert_profile", {})
 
-    conversation = state["messages"]
+    # Find the last HumanMessage, last AIMessage, and last ToolMessage in the conversation.
+    last_human_message = None
+    last_ai_messages = []
 
-    manager = create_memory_store_manager(
-        "gpt-4o",
-        namespace=namespace,
-        instructions=_CUSTOM_EXPERT_INSTRUCTIONS,
-        schemas=[Expert],
-        enable_inserts=False,
+    for msg in reversed(state["messages"]):
+        if not last_human_message and isinstance(msg, HumanMessage):
+            last_human_message = msg
+        if isinstance(msg, AIMessage):
+            if len(last_ai_messages) < 3:
+                last_ai_messages.append(msg)
+        if last_human_message and len(last_ai_messages) == 3:
+            break
+
+    # Reverse the AI messages so they appear in chronological order.
+    last_ai_messages = list(reversed(last_ai_messages))
+
+    # Combine the contents of the three messages (if they exist) into a single string.
+    recent_messages_parts = []
+    if last_human_message:
+        recent_messages_parts.append("Human: " + last_human_message.content)
+    for ai_msg in last_ai_messages:
+        recent_messages_parts.append("AI: " + ai_msg.content)
+
+    recent_messages_str = "\n\n".join(recent_messages_parts)
+
+    # Convert the current expert profile from state to a string representation.
+    current_expert_profile_str = str(current_expert_profile)
+
+    # Format the instructions with the recent messages and current expert profile.
+    optimized_instructions = _CUSTOM_EXPERT_INSTRUCTIONS.format(
+        recent_messages=recent_messages_str,
+        current_expert_profile=current_expert_profile_str
     )
 
-    await manager.ainvoke({
-        "messages": conversation,
-        "existing": memories
-    })
+    # Create a memory manager with the optimized instructions.
+    manager = create_memory_manager(
+        "gpt-4o",
+        instructions=optimized_instructions,
+        schemas=[Expert],
+    )
 
-    # Retrieve tool call metadata from the last message
-    tool_calls = state['messages'][-1].tool_calls
+    # Prepare input: use the last HumanMessage and the last two AIMessage objects (if available).
+    input_messages = []
+    if last_human_message is not None:
+        input_messages.append(last_human_message)
+    input_messages.extend(last_ai_messages)
+    logger.info(f"Input messages: {input_messages}")
 
-    return {
-        "messages": [{
-            "role": "tool",
-            "content": "updated expert",
-            "tool_call_id": tool_calls[0]['id']
-        }]
+    input_data = {
+        "messages": input_messages,
     }
+
+    # Invoke the memory manager.
+    profile_expert = await manager.ainvoke(input_data)
+
+    if profile_expert and len(profile_expert) > 0:
+        updated_expert = profile_expert[0][1]  # Extract the Expert instance.
+        expert_profile_value = updated_expert.dict()  # Convert to dict.
+    else:
+        expert_profile_value = Expert()
+
+    # Retrieve tool call metadata from the most recent message that has tool_calls.
+    tool_call_id = None
+    for msg in reversed(state["messages"]):
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            tool_call_id = msg.tool_calls[0]["id"]
+            break
+
+    # Return a Command object that updates the state.
+    return Command(
+        update={
+            "expert_profile": expert_profile_value,
+            "messages": [
+                ToolMessage(
+                    content="updated expert",
+                    tool_call_id=tool_call_id
+                )
+            ]
+        }
+    )

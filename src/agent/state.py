@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
 from langgraph.graph import MessagesState
@@ -18,10 +17,10 @@ class Expert(BaseModel):
         instructions: Contains the instructions of the expert.
     """
     name: Optional[str] = Field(None, description="Name of Expert")
-    description: Optional[int] = Field(None, description="Description of the Expert")
+    description: Optional[str] = Field(None, description="Description of the Expert")
     instructions: Optional[str] = Field(None, description="Instructions for the System prompt of the Expert")
 
 
 class ExpertCreatorAssistant(MessagesState):
 
-    Expert: Optional[Expert]
+    expert_profile: Optional[Expert]
