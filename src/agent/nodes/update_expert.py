@@ -1,29 +1,14 @@
 import logging
 
 from langmem import create_memory_manager
-from pydantic import BaseModel, Field
-from typing import Optional
 
 from langgraph.types import Command
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 
-from agent.state import ExpertCreatorAssistant
+from agent.state import ExpertCreatorAssistant, Expert
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
-class Expert(BaseModel):
-    """
-    Represents a custom Agent called 'Expert' with various attributes.
-    Attributes:
-        name: The Expert's name.
-        description: A brief description of the Expert.
-        instructions: Detailed instructions for the Expert.
-    """
-    name: Optional[str] = Field(None, description="Name of Expert")
-    description: Optional[str] = Field(None, description="Description of the Expert")
-    instructions: Optional[str] = Field(None, description="Instructions for the Expert")
 
 
 # Updated instructions with placeholders for recent messages and the current expert profile from state.
@@ -44,7 +29,7 @@ Steps:
 """
 
 
-async def update_expert(state: ExpertCreatorAssistant):
+def update_expert(state: ExpertCreatorAssistant):
 
     # Get the current expert profile from state (synchronized earlier via sync_profile).
     current_expert_profile = state.get("expert_profile", {})
@@ -102,7 +87,7 @@ async def update_expert(state: ExpertCreatorAssistant):
     }
 
     # Invoke the memory manager.
-    profile_expert = await manager.ainvoke(input_data)
+    profile_expert = manager.invoke(input_data)
 
     if profile_expert and len(profile_expert) > 0:
         updated_expert = profile_expert[0][1]  # Extract the Expert instance.

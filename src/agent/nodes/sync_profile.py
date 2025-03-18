@@ -8,6 +8,7 @@ from agent.state import ExpertCreatorAssistant, Expert
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
+
 def sync_profile(state: ExpertCreatorAssistant, config: RunnableConfig):
     """
     Comprehensively synchronize the expert profile from the configuration.

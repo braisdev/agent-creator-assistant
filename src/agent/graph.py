@@ -1,17 +1,16 @@
 from typing import Literal
 
+import certifi
 from dotenv import load_dotenv
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import END, START
 
 from agent.nodes.expert_field_assistant import expert_field_assistant
 from agent.nodes.sync_profile import sync_profile
 from agent.state import ExpertCreatorAssistant
-from langgraph.store.memory import InMemoryStore
-from langgraph.graph import StateGraph, MessagesState
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph
 
 from agent.configuration import Configuration
-
 from agent.nodes.message_manager import message_manager
 from agent.nodes.update_expert import update_expert
 
@@ -49,8 +48,9 @@ workflow.add_conditional_edges("message_manager", route_message)
 workflow.add_edge("update_expert", "message_manager")
 workflow.add_edge("expert_field_assistant", "message_manager")
 
-# Checkpointer for short-term (within-thread) memory
 within_thread_memory = MemorySaver()
 
 # Compile the workflow with the checkpointer
 graph = workflow.compile(checkpointer=within_thread_memory)
+
+

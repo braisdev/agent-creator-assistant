@@ -1,7 +1,8 @@
-from typing import TypedDict, Literal
+from typing import Literal
+from pydantic import BaseModel
 
 
-# Update memory tool
-class UpdateMemory(TypedDict):
+# Update memory tool as a BaseModel instead of TypedDict
+class UpdateMemory(BaseModel):
     """ Decision on what memory type to update """
     update_type: Literal['expert']

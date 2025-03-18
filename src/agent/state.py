@@ -20,6 +20,17 @@ class Expert(BaseModel):
     description: Optional[str] = Field(None, description="Description of the Expert")
     instructions: Optional[str] = Field(None, description="Instructions for the System prompt of the Expert")
 
+    @classmethod
+    def from_config(cls, config: dict) -> Expert:
+        """
+        Create an Expert instance from a configuration dictionary.
+        """
+        return cls(
+            name=config.get("name"),
+            description=config.get("description"),
+            instructions=config.get("instructions"),
+        )
+
 
 class ExpertCreatorAssistant(MessagesState):
 

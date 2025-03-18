@@ -1,4 +1,3 @@
-import asyncio
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from src.agent.graph import graph
@@ -9,8 +8,9 @@ logging.disable(logging.CRITICAL)
 load_dotenv()
 
 
-async def main():
-    # Initial configuration for the agent.
+def main():
+
+    # Initial configuration for the agent
     config = {
         "configurable": {
             "thread_id": "1",
@@ -24,13 +24,13 @@ async def main():
         }
     }
 
-    # Initialize the conversation state.
+    # Initialize the conversation state
     conversation_state = {"messages": []}
 
     print("Interactive Chatbot Session. Type 'exit' to quit.\n")
 
     while True:
-        # Ask if you want to update the expert_profile configuration.
+        # Ask if you want to update the expert_profile configuration
         update_profile = input("Do you want to modify the expert_profile? (yes/no): ")
         if update_profile.strip().lower() in ["yes", "y"]:
             print("Update expert_profile:")
@@ -48,22 +48,22 @@ async def main():
             if new_instructions.strip():
                 config["configurable"]["expert_profile"]["instructions"] = new_instructions.strip()
 
-        # Get your chat message.
+        # Get your chat message
         user_input = input("You: ")
         if user_input.strip().lower() == "exit":
             print("Exiting the chatbot. Goodbye!")
             break
 
-        # Append the human message to the conversation.
+        # Append the human message to the conversation
         conversation_state["messages"].append(HumanMessage(content=user_input))
 
-        # Stream the agent's response, passing the config.
+        # Stream the agent's response, passing the config
         print("Agent: ", end="", flush=True)
-        async for msg, metadata in graph.astream(conversation_state, stream_mode="messages", config=config):
+        for msg, metadata in graph.stream(conversation_state, stream_mode="messages", config=config):
             if metadata["langgraph_node"] == "message_manager":
                 print(msg.content, end="", flush=True)
         print()  # New line after the message is complete
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
